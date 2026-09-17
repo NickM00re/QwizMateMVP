@@ -1,6 +1,60 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# QwizMate
 
-# Getting Started
+QwizMate is an AI-powered study assistant. Students create a **project** per
+course, add **notes** (typed text, documents, or photos of handwritten
+notes), and QwizMate generates multiple-choice **quizzes** grounded strictly
+in that material. As students answer questions, an adaptive engine tracks a
+per-question mastery score so weak topics resurface more often and mastered
+ones fade out — a lightweight, on-device alternative to full spaced
+repetition.
+
+This repo is the MVP scaffold: a [React Native](https://reactnative.dev)
+app bootstrapped with [`@react-native-community/cli`](https://github.com/react-native-community/cli),
+extended with the project-specific architecture described below.
+
+## Architecture
+
+```
+src/
+  types/models.ts        Domain model: Project, Note, Question, QuizAttempt
+  services/
+    storage/              Offline-first repositories (AsyncStorage-backed)
+    ai/                    AiService interface + MockAiService (swap-in point
+                           for a real backend/LLM integration)
+    adaptive/              Adaptive quiz-selection & mastery-tracking engine
+  state/                  Zustand stores (per-feature) that orchestrate the
+                           services above for screens to consume
+  navigation/             React Navigation stack + route param types
+  screens/                ProjectsList, ProjectDetail, UploadNote, Quiz,
+                           QuizResults
+  components/             Shared UI primitives (Button, Card, EmptyState)
+  theme/                  Centralized colors/spacing/typography
+```
+
+Key decisions for the MVP, and why:
+
+- **Offline-first storage.** Every entity is persisted locally via
+  `AsyncStorageRepository` (see `src/services/storage`). Previously
+  generated notes, questions, and quiz history remain available with no
+  network connection, since mobile connectivity can't be assumed.
+- **AI is an interface, not a hardwired call.** `src/services/ai/AiService.ts`
+  defines the contract (`generateQuestions`, `extractText`). The MVP ships
+  with `MockAiService`, a deterministic local implementation so the full
+  app flow (upload → generate → quiz → adapt) works without a backend.
+  When a real backend exists, add a `RemoteAiService implements AiService`
+  that calls it — **never call an LLM provider's API directly from the
+  client**; proxy through a server so provider API keys are never bundled
+  into the mobile app.
+- **Adaptive learning is isolated.** `src/services/adaptive/adaptiveEngine.ts`
+  implements weighted question selection (unseen/weak questions favored)
+  and an exponential-moving-average mastery score, independent of any
+  screen or storage code, so the algorithm can be swapped for something
+  like SM-2 later without ripple effects.
+- **State layer:** [Zustand](https://github.com/pmndrs/zustand) stores
+  (`src/state`) call into the repositories/services and expose simple hooks
+  to screens — no Redux boilerplate needed for an MVP this size.
+
+## Getting Started
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
@@ -95,3 +149,23 @@ To learn more about React Native, take a look at the following resources:
 - [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
 - [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
 - [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+
+## Next steps for the MVP
+
+The current build is a fully working, offline-capable app using a **mock**
+AI service so the entire user flow can be demoed today. To move toward a
+real product:
+
+1. Stand up a backend (e.g. a small Node/Express or serverless API) that
+   holds the LLM provider key and exposes endpoints matching `AiService`
+   (`POST /projects/:id/questions`, `POST /notes/extract`).
+2. Add a `RemoteAiService` in `src/services/ai/` implementing that contract
+   and swap it in via `src/services/ai/index.ts`.
+3. Add authentication + per-user sync (e.g. push/pull against the backend
+   on top of the existing local repositories) so a student's projects
+   follow them across devices.
+4. Wire up `@react-native-documents/picker` and `react-native-image-picker`
+   natively (`pod install` on iOS, Gradle autolinking on Android — already
+   installed as dependencies) and test OCR quality on real handwritten
+   notes.
+
